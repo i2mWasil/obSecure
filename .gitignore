@@ -1,5 +1,12 @@
 .vscode
 
-build
+build/
+*.o
+*.exe
+*.dll
+*.dylib
+*.qmake.stash
+CMakeCache.txt
+CMakeFiles/
 
 keys
