@@ -85,6 +85,7 @@ EncryptedMessage MessageSerializer::deserializeEncrypted(const std::string& data
     if (std::getline(iss, token, '|')) {
         nonceLength = std::stoul(token);
     }
+    
     if (nonceLength > 0) {
         message.nonce.resize(nonceLength);
         iss.read(&message.nonce[0], nonceLength);
@@ -95,6 +96,7 @@ EncryptedMessage MessageSerializer::deserializeEncrypted(const std::string& data
     if (std::getline(iss, token, '|')) {
         tagLength = std::stoul(token);
     }
+    
     if (tagLength > 0) {
         message.authTag.resize(tagLength);
         iss.read(&message.authTag[0], tagLength);
@@ -105,6 +107,7 @@ EncryptedMessage MessageSerializer::deserializeEncrypted(const std::string& data
     if (std::getline(iss, token, '|')) {
         contentLength = std::stoul(token);
     }
+    
     if (contentLength > 0) {
         message.encryptedContent.resize(contentLength);
         iss.read(&message.encryptedContent[0], contentLength);
@@ -116,6 +119,7 @@ EncryptedMessage MessageSerializer::deserializeEncrypted(const std::string& data
 std::string MessageSerializer::serialize(const KeyBundle& keyBundle) {
     std::ostringstream oss;
     oss << keyBundle.identityKey << "|"
+        << keyBundle.identityKeySignature << "|"  // ✅ ADD THIS LINE
         << keyBundle.signedPrekey << "|"
         << keyBundle.signedPrekeySignature << "|"
         << keyBundle.oneTimePrekey << "|"
@@ -131,6 +135,11 @@ KeyBundle MessageSerializer::deserializeKeyBundle(const std::string& data) {
     
     if (std::getline(iss, token, '|')) {
         bundle.identityKey = token;
+    }
+    
+    // ✅ ADD THIS BLOCK
+    if (std::getline(iss, token, '|')) {
+        bundle.identityKeySignature = token;
     }
     
     if (std::getline(iss, token, '|')) {
@@ -188,6 +197,7 @@ X3DHMessage MessageSerializer::deserializeX3DH(const std::string& data) {
     if (std::getline(iss, token, '|')) {
         adLength = std::stoul(token);
     }
+    
     if (adLength > 0) {
         message.associatedData.resize(adLength);
         iss.read(&message.associatedData[0], adLength);
@@ -198,6 +208,7 @@ X3DHMessage MessageSerializer::deserializeX3DH(const std::string& data) {
     if (std::getline(iss, token, '|')) {
         msgLength = std::stoul(token);
     }
+    
     if (msgLength > 0) {
         message.encryptedMessage.resize(msgLength);
         iss.read(&message.encryptedMessage[0], msgLength);

@@ -19,6 +19,7 @@ struct KeyBundle {
     std::string identityKey;
     std::string signedPrekey;
     std::string signedPrekeySignature;
+    std::string identityKeySignature;
     std::string oneTimePrekey;  // Optional
     uint32_t signedPrekeyId;
     uint32_t oneTimePrekeyId;

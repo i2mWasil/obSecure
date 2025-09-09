@@ -79,28 +79,34 @@ void KeyManager::generateOneTimePrekeys(int count) {
 KeyBundle KeyManager::getCurrentKeyBundle() const {
     KeyBundle bundle;
     bundle.identityKey = getIdentityPublicKeyString();
-
+    
+    // ✅ GENERATE IDENTITY KEY SELF-SIGNATURE
+    std::string identitySignature;
+    if (signData(bundle.identityKey, identitySignature)) {
+        bundle.identityKeySignature = identitySignature;
+    }
+    
     if (!signedPrekeyPublics.empty()) {
         auto it = signedPrekeyPublics.find(currentSignedPrekeyId);
         if (it != signedPrekeyPublics.end()) {
             bundle.signedPrekey = it->second;
             bundle.signedPrekeyId = currentSignedPrekeyId;
-            
             std::string signature;
             if (signData(bundle.signedPrekey, signature)) {
                 bundle.signedPrekeySignature = signature;
             }
         }
     }
-
+    
     if (!oneTimePrekeyPublics.empty()) {
         auto it = oneTimePrekeyPublics.begin();
         bundle.oneTimePrekey = it->second;
         bundle.oneTimePrekeyId = it->first;
     }
-
+    
     return bundle;
 }
+
 
 std::string KeyManager::getIdentityPublicKeyString() const {
     return encodePublicKey(identityPublicKey);
@@ -123,12 +129,18 @@ bool KeyManager::signData(const std::string& data, std::string& signature) const
 bool KeyManager::verifySignature(const std::string& data, const std::string& signature, const std::string& publicKeyStr) const {
     try {
         CryptoPP::ed25519::Verifier verifier = decodeEd25519Verifier(publicKeyStr);
-        bool result = false;
-        CryptoPP::StringSource ss(signature, true,
-            new CryptoPP::Base64Decoder(
-                new CryptoPP::SignatureVerificationFilter(verifier,
-                    new CryptoPP::ArraySink((CryptoPP::byte*)&result, sizeof(result)))));
-        return result;
+        
+        // Decode signature from base64
+        std::string decodedSignature;
+        CryptoPP::StringSource(signature, true,
+            new CryptoPP::Base64Decoder(new CryptoPP::StringSink(decodedSignature)));
+        
+        // Verify signature - this returns true/false directly
+        return verifier.VerifyMessage(
+            (const CryptoPP::byte*)data.data(), data.size(),
+            (const CryptoPP::byte*)decodedSignature.data(), decodedSignature.size()
+        );
+        
     } catch (const CryptoPP::Exception& e) {
         std::cerr << "Signature verification error: " << e.what() << std::endl;
         return false;
@@ -173,14 +185,25 @@ CryptoPP::x25519 KeyManager::getEphemeralKey() const {
 }
 
 bool KeyManager::addContactKeyBundle(const std::string& phoneNumber, const KeyBundle& keyBundle) {
+    // ✅ RE-ENABLE SIGNATURE VERIFICATION
     if (!verifySignature(keyBundle.signedPrekey, keyBundle.signedPrekeySignature, keyBundle.identityKey)) {
         std::cerr << "Invalid signed prekey signature for: " << phoneNumber << std::endl;
         return false;
     }
-
+    
+    // Also verify identity key self-signature if present
+    if (!keyBundle.identityKeySignature.empty()) {
+        if (!verifySignature(keyBundle.identityKey, keyBundle.identityKeySignature, keyBundle.identityKey)) {
+            std::cerr << "Invalid identity key self-signature for: " << phoneNumber << std::endl;
+            return false;
+        }
+    }
+    
+    std::cout << "Adding contact key bundle for: " << phoneNumber << " (signature verified)" << std::endl;
     contactKeyBundles[phoneNumber] = keyBundle;
     return saveKeys();
 }
+
 
 KeyBundle KeyManager::getContactKeyBundle(const std::string& phoneNumber) const {
     auto it = contactKeyBundles.find(phoneNumber);

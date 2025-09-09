@@ -11,18 +11,18 @@ ServerAPI::ServerAPI(const std::string& serverUrl, QObject* parent)
 void ServerAPI::registerUser(const std::string& phoneNumber, const KeyBundle& initialKeys, ResponseCallback callback) {
     QJsonObject json;
     json["phoneNumber"] = QString::fromStdString(phoneNumber);
-    
+
     QJsonObject identityKey;
     identityKey["publicKey"] = QString::fromStdString(initialKeys.identityKey);
-    identityKey["signature"] = QString::fromStdString(initialKeys.signedPrekeySignature);
+    // ✅ USE THE CORRECT IDENTITY KEY SIGNATURE FIELD
+    identityKey["signature"] = QString::fromStdString(initialKeys.identityKeySignature);
     json["identityKey"] = identityKey;
-    
+
     QJsonObject signedPrekey;
-    signedPrekey["keyId"] = static_cast<int>(initialKeys.signedPrekeyId);
+    signedPrekey["keyId"] = static_cast<qint64>(initialKeys.signedPrekeyId);
     signedPrekey["publicKey"] = QString::fromStdString(initialKeys.signedPrekey);
     signedPrekey["signature"] = QString::fromStdString(initialKeys.signedPrekeySignature);
     json["signedPrekey"] = signedPrekey;
-    
     QJsonArray oneTimePrekeys;
     if (!initialKeys.oneTimePrekey.empty()) {
         QJsonObject otk;
