@@ -1,9 +1,10 @@
+
 #include "NetworkManager.h"
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QHostAddress>
-#include <QDataStream>
 #include <QDebug>
-#include <iostream>
-#include <chrono>
+#include <QTimer>
 
 NetworkManager::NetworkManager(const QString& userId, int port, QObject* parent)
     : QObject(parent), server(nullptr), serverPort(port), currentUserId(userId) {
@@ -15,20 +16,19 @@ NetworkManager::~NetworkManager() {
 
 bool NetworkManager::startServer() {
     if (server) {
-        return true; 
+        return true;
     }
-    
+
     server = new QTcpServer(this);
     connect(server, &QTcpServer::newConnection, this, &NetworkManager::onNewConnection);
-    
+
     if (!server->listen(QHostAddress::Any, serverPort)) {
         qDebug() << "Failed to start server on port" << serverPort << ":" << server->errorString();
-        qDebug() << "Port may already be in use. Try a different port.";
         delete server;
         server = nullptr;
         return false;
     }
-    
+
     qDebug() << "Server started on port" << serverPort;
     return true;
 }
@@ -39,29 +39,30 @@ void NetworkManager::stopServer() {
         delete server;
         server = nullptr;
     }
-    
+
     for (auto& pair : activeConnections) {
         pair.second->close();
         pair.second->deleteLater();
     }
+
     activeConnections.clear();
     socketToUserId.clear();
 }
 
 bool NetworkManager::connectToUser(const QString& userId, const QString& address, int port) {
     if (activeConnections.find(userId) != activeConnections.end()) {
-        return true; 
+        return true;
     }
-    
+
     QTcpSocket* socket = new QTcpSocket(this);
     connect(socket, &QTcpSocket::readyRead, this, &NetworkManager::onDataReceived);
     connect(socket, &QTcpSocket::disconnected, this, &NetworkManager::onClientDisconnected);
     connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::errorOccurred),
             this, &NetworkManager::onConnectionError);
-    
+
     socket->connectToHost(address, port);
     
-    if (socket->waitForConnected(5000)) {
+    if (socket->waitForConnected(5001)) {
         activeConnections[userId] = socket;
         socketToUserId[socket] = userId;
         sendHandshake(socket);
@@ -86,35 +87,48 @@ void NetworkManager::disconnectFromUser(const QString& userId) {
 }
 
 bool NetworkManager::sendMessage(const QString& receiverId, const EncryptedMessage& message) {
-    auto it = activeConnections.find(receiverId);
-    if (it == activeConnections.end()) {
-        qDebug() << "No connection to user:" << receiverId;
-        return false;
-    }
-    
-    QTcpSocket* socket = it->second;
-    if (socket->state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "Socket not connected to user:" << receiverId;
-        return false;
-    }
-    
     MessageProtocol protocol;
     protocol.type = MessageType::TEXT_MESSAGE;
     protocol.senderId = message.senderId;
     protocol.receiverId = message.receiverId;
     protocol.timestamp = message.timestamp;
     protocol.payload = MessageSerializer::serialize(message);
-    
+
+    return sendProtocolMessage(receiverId, protocol);
+}
+
+bool NetworkManager::sendProtocolMessage(const QString& receiverId, const MessageProtocol& protocol) {
+    auto it = activeConnections.find(receiverId);
+    if (it == activeConnections.end()) {
+        qDebug() << "No connection to user:" << receiverId;
+        return false;
+    }
+
+    QTcpSocket* socket = it->second;
+    if (socket->state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "Socket not connected to user:" << receiverId;
+        return false;
+    }
+
     std::string serialized = MessageSerializer::serialize(protocol);
-    QByteArray data = QByteArray::fromStdString(serialized);
-    
-    uint32_t dataLength = data.size();
-    socket->write(reinterpret_cast<const char*>(&dataLength), sizeof(dataLength));
-    socket->write(data);
-    socket->flush();
-    
-    qDebug() << "Sent message to" << receiverId;
-    return true;
+    return sendData(socket, serialized);
+}
+
+bool NetworkManager::sendData(QTcpSocket* socket, const std::string& data) {
+    QByteArray byteArray = QByteArray::fromStdString(data);
+    uint32_t dataLength = byteArray.size();
+
+    // Send length header first
+    if (socket->write(reinterpret_cast<const char*>(&dataLength), sizeof(dataLength)) == -1) {
+        return false;
+    }
+
+    // Send actual data
+    if (socket->write(byteArray) == -1) {
+        return false;
+    }
+
+    return socket->flush();
 }
 
 bool NetworkManager::isConnectedToUser(const QString& userId) const {
@@ -139,7 +153,7 @@ void NetworkManager::onNewConnection() {
         connect(socket, &QTcpSocket::disconnected, this, &NetworkManager::onClientDisconnected);
         connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::errorOccurred),
                 this, &NetworkManager::onConnectionError);
-        
+
         qDebug() << "New incoming connection from:" << socket->peerAddress().toString();
     }
 }
@@ -147,19 +161,18 @@ void NetworkManager::onNewConnection() {
 void NetworkManager::onDataReceived() {
     QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
-    
+
     while (socket->bytesAvailable() >= sizeof(uint32_t)) {
         uint32_t dataLength;
         if (socket->peek(reinterpret_cast<char*>(&dataLength), sizeof(dataLength)) != sizeof(dataLength)) {
             break;
         }
-        
+
         if (socket->bytesAvailable() < sizeof(dataLength) + dataLength) {
             break;
         }
-        
+
         socket->read(sizeof(dataLength));
-        
         QByteArray data = socket->read(dataLength);
         processIncomingData(socket, data);
     }
@@ -168,7 +181,7 @@ void NetworkManager::onDataReceived() {
 void NetworkManager::onClientDisconnected() {
     QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
-    
+
     auto it = socketToUserId.find(socket);
     if (it != socketToUserId.end()) {
         QString userId = it->second;
@@ -176,18 +189,18 @@ void NetworkManager::onClientDisconnected() {
         emit userDisconnected(userId);
         cleanupConnection(socket);
     }
-    
+
     socket->deleteLater();
 }
 
 void NetworkManager::onConnectionError(QAbstractSocket::SocketError error) {
     QTcpSocket* socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
-    
+
     QString errorMsg = QString("Network error: %1").arg(socket->errorString());
     qDebug() << errorMsg;
     emit connectionError(errorMsg);
-    
+
     auto it = socketToUserId.find(socket);
     if (it != socketToUserId.end()) {
         emit userDisconnected(it->second);
@@ -199,22 +212,33 @@ void NetworkManager::processIncomingData(QTcpSocket* socket, const QByteArray& d
     try {
         std::string dataStr = data.toStdString();
         MessageProtocol protocol = MessageSerializer::deserialize(dataStr);
-        
+
         switch (protocol.type) {
             case MessageType::CONNECTION_REQUEST:
                 handleHandshake(socket, protocol);
                 break;
-                
+
             case MessageType::TEXT_MESSAGE: {
                 EncryptedMessage encMsg = MessageSerializer::deserializeEncrypted(protocol.payload);
                 emit messageReceived(encMsg);
                 break;
             }
-            
+
+            case MessageType::X3DH_INIT: {
+                X3DHMessage x3dhMsg = MessageSerializer::deserializeX3DH(protocol.payload);
+                emit x3dhMessageReceived(x3dhMsg);
+                break;
+            }
+
+            case MessageType::ACKNOWLEDGMENT:
+                qDebug() << "Received acknowledgment from" << QString::fromStdString(protocol.senderId);
+                break;
+
             default:
                 qDebug() << "Unknown message type received";
                 break;
         }
+
     } catch (const std::exception& e) {
         qDebug() << "Error processing incoming data:" << e.what();
     }
@@ -222,7 +246,7 @@ void NetworkManager::processIncomingData(QTcpSocket* socket, const QByteArray& d
 
 void NetworkManager::handleHandshake(QTcpSocket* socket, const MessageProtocol& message) {
     QString userId = QString::fromStdString(message.senderId);
-    
+
     auto existingIt = activeConnections.find(userId);
     if (existingIt != activeConnections.end()) {
         QTcpSocket* existingSocket = existingIt->second;
@@ -232,10 +256,10 @@ void NetworkManager::handleHandshake(QTcpSocket* socket, const MessageProtocol& 
             existingSocket->deleteLater();
         }
     }
-    
+
     activeConnections[userId] = socket;
     socketToUserId[socket] = userId;
-    
+
     qDebug() << "Handshake completed with user:" << userId;
     emit userConnected(userId);
 }
@@ -249,14 +273,9 @@ void NetworkManager::sendHandshake(QTcpSocket* socket) {
         std::chrono::system_clock::now().time_since_epoch()
     ).count();
     handshake.payload = "HANDSHAKE";
-    
+
     std::string serialized = MessageSerializer::serialize(handshake);
-    QByteArray data = QByteArray::fromStdString(serialized);
-    
-    uint32_t dataLength = data.size();
-    socket->write(reinterpret_cast<const char*>(&dataLength), sizeof(dataLength));
-    socket->write(data);
-    socket->flush();
+    sendData(socket, serialized);
 }
 
 void NetworkManager::cleanupConnection(QTcpSocket* socket) {
@@ -264,7 +283,7 @@ void NetworkManager::cleanupConnection(QTcpSocket* socket) {
     if (socketIt != socketToUserId.end()) {
         QString userId = socketIt->second;
         socketToUserId.erase(socketIt);
-        
+
         auto connIt = activeConnections.find(userId);
         if (connIt != activeConnections.end()) {
             activeConnections.erase(connIt);

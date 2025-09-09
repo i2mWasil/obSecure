@@ -10,3 +10,9 @@ CMakeCache.txt
 CMakeFiles/
 
 keys
+gitignore-folder
+
+
+.env
+
+__pycache__

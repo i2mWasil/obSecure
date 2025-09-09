@@ -1,8 +1,8 @@
 #include "UserManager.h"
+#include <QDir>
+#include <iostream>
 #include <fstream>
 #include <sstream>
-#include <iostream>
-#include <QDir>
 
 UserManager::UserManager(const std::string& userId) : currentUserId(userId) {
     contactsFilePath = "keys/" + userId + "/contacts.json";
@@ -19,7 +19,7 @@ bool UserManager::addContact(const Contact& contact) {
     if (contact.userId == currentUserId) {
         return false; // Can't add self as contact
     }
-    
+
     contacts[contact.userId] = contact;
     return saveContacts();
 }
@@ -57,6 +57,7 @@ void UserManager::updateContactStatus(const std::string& userId, bool isOnline) 
     auto it = contacts.find(userId);
     if (it != contacts.end()) {
         it->second.isOnline = isOnline;
+        saveContacts();
     }
 }
 
@@ -67,7 +68,7 @@ bool UserManager::saveContacts() {
             std::cerr << "Failed to open contacts file for writing: " << contactsFilePath << std::endl;
             return false;
         }
-        
+
         for (const auto& pair : contacts) {
             const Contact& contact = pair.second;
             file << contact.userId << "|"
@@ -76,7 +77,7 @@ bool UserManager::saveContacts() {
                  << contact.port << "|"
                  << (contact.isOnline ? "1" : "0") << "\n";
         }
-        
+
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error saving contacts: " << e.what() << std::endl;
@@ -88,28 +89,28 @@ bool UserManager::loadContacts() {
     try {
         std::ifstream file(contactsFilePath);
         if (!file.is_open()) {
-            return true; 
+            return true; // File doesn't exist yet, that's okay
         }
-        
+
         std::string line;
         while (std::getline(file, line)) {
             if (line.empty()) continue;
-            
+
             std::istringstream iss(line);
             std::string token;
             Contact contact;
-            
+
             if (std::getline(iss, token, '|')) contact.userId = token;
             if (std::getline(iss, token, '|')) contact.displayName = token;
             if (std::getline(iss, token, '|')) contact.ipAddress = token;
             if (std::getline(iss, token, '|')) contact.port = std::stoi(token);
             if (std::getline(iss, token, '|')) contact.isOnline = (token == "1");
-            
+
             if (!contact.userId.empty()) {
                 contacts[contact.userId] = contact;
             }
         }
-        
+
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error loading contacts: " << e.what() << std::endl;
