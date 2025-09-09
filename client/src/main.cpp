@@ -73,3 +73,4 @@ int main(int argc, char *argv[])
         return 1;
     }
 }
+//make -j$(sysctl -n hw.ncpu)

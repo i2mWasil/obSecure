@@ -16,3 +16,8 @@ gitignore-folder
 .env
 
 __pycache__
+instance
+.idea
+.DS_Store
+.vscode
+*.log

@@ -15,6 +15,8 @@
 #include <QColor>
 #include <iostream>
 #include <chrono>
+#include <QJsonDocument> 
+#include <QJsonObject>
 
 MainWindow::MainWindow(const QString& phoneNumber, int port, QWidget* parent)
     : QMainWindow(parent), currentPhoneNumber(phoneNumber), serverPort(port) { 
@@ -176,23 +178,38 @@ void MainWindow::initializeManagers() {
         }
         
         // Check if user is registered with server
-        serverAPI->verifyPhone(currentPhoneNumber.toStdString(), 
-            [this](bool success, const std::string& response) {
-                if (!success) {
-                    // User not registered, register now
-                    phoneAuthManager->registerWithServer([this](bool regSuccess, const std::string& regResponse) {
-                        if (regSuccess) {
-                            statusLabel->setText(statusLabel->text() + " | Registered");
-                        } else {
-                            statusLabel->setText(statusLabel->text() + " | Registration Failed");
-                        }
-                    });
+        serverAPI->verifyPhone(currentPhoneNumber.toStdString(),
+    [this](bool success, const std::string& response) {
+        if (success) {
+            // Parse the JSON response
+            QJsonDocument doc = QJsonDocument::fromJson(QByteArray::fromStdString(response));
+            QJsonObject obj = doc.object();
+            
+            bool userExists = obj["exists"].toBool();
+            bool userActive = obj["active"].toBool();
+            
+            if (!userExists) {  // ✅ CORRECT CONDITION
+                // User not registered, register now
+                phoneAuthManager->registerWithServer([this](bool regSuccess, const std::string& regResponse) {
+                if (regSuccess) {
+                        statusLabel->setText(statusLabel->text() + " | Registered");
                 } else {
-                    statusLabel->setText(statusLabel->text() + " | Verified");
-                }
-            });
+                        statusLabel->setText(statusLabel->text() + " | Registration Failed");
+                    }
+                });
+            } else if (userExists && userActive) {
+                statusLabel->setText(statusLabel->text() + " | Verified");
+            } else {
+                statusLabel->setText(statusLabel->text() + " | User Inactive");
+            }
+            } 
+        else {
+            statusLabel->setText(statusLabel->text() + " | Verification Failed");
+        }
+    });
+
         
-        std::cout << "All managers initialized successfully" << std::endl;
+    std::cout << "All managers initialized successfully" << std::endl;
         
     } catch (const std::exception& e) {
         std::cerr << "Error in initializeManagers: " << e.what() << std::endl;

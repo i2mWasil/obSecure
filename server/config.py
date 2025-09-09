@@ -13,12 +13,12 @@ class Config:
     }
     
     # Security settings
-    PHONE_SALT = os.environ.get('PHONE_SALT') #or 'change-this-salt-in-production'
+    PHONE_SALT = os.environ.get('PHONE_SALT') or 'change-this-salt-in-production'
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY') or SECRET_KEY
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
     
     # Rate limiting
-    RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL')# or 'redis://localhost:6379'
+    RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL') or 'redis://localhost:6379'
     RATELIMIT_DEFAULT = "100 per hour"
     
     # CORS settings
@@ -30,7 +30,7 @@ class ProductionConfig(Config):
 
 class DevelopmentConfig(Config):
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') #or 'sqlite:///keyserver_dev.db'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') or 'sqlite:///keyserver_dev.db'
 
 class TestingConfig(Config):
     TESTING = True
