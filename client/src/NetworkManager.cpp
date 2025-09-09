@@ -50,7 +50,10 @@ void NetworkManager::stopServer() {
 }
 
 bool NetworkManager::connectToUser(const QString& userId, const QString& address, int port) {
+    qDebug() << "Attempting to connect to:" << userId << "at" << address << ":" << port;
+    
     if (activeConnections.find(userId) != activeConnections.end()) {
+        qDebug() << "Already connected to" << userId;
         return true;
     }
 
@@ -58,23 +61,28 @@ bool NetworkManager::connectToUser(const QString& userId, const QString& address
     connect(socket, &QTcpSocket::readyRead, this, &NetworkManager::onDataReceived);
     connect(socket, &QTcpSocket::disconnected, this, &NetworkManager::onClientDisconnected);
     connect(socket, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::errorOccurred),
-            this, &NetworkManager::onConnectionError);
-
+        this, &NetworkManager::onConnectionError);
+    
+    qDebug() << "Connecting to host:" << address << "port:" << port;
     socket->connectToHost(address, port);
     
-    if (socket->waitForConnected(5001)) {
+    qDebug() << "Waiting for connection...";
+    if (socket->waitForConnected(100000)) { // Increased timeout to 5 seconds
         activeConnections[userId] = socket;
         socketToUserId[socket] = userId;
         sendHandshake(socket);
         emit userConnected(userId);
-        qDebug() << "Connected to user:" << userId;
+        qDebug() << "Successfully connected to user:" << userId;
         return true;
     } else {
-        qDebug() << "Failed to connect to user" << userId << ":" << socket->errorString();
+        qDebug() << "Connection failed. Error:" << socket->errorString();
+        qDebug() << "Socket state:" << socket->state();
+        qDebug() << "Socket error:" << socket->error();
         socket->deleteLater();
         return false;
     }
 }
+
 
 void NetworkManager::disconnectFromUser(const QString& userId) {
     auto it = activeConnections.find(userId);
