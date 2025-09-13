@@ -92,12 +92,6 @@ brew services start redis
 sudo systemctl start postgresql redis
 ```
 
-**Create database**
-
-```bash
-createdb keyserver
-```
-
 ## 🔧 Configuration
 
 ### Client Configuration
@@ -261,10 +255,6 @@ We welcome contributions\! Please follow these guidelines:
 # Clone repository
 git clone [https://github.com/i2mWasil/obSecure.git](https://github.com/i2mWasil/obSecure.git)
 cd obSecure
-
-# Install pre-commit hooks
-pip install pre-commit
-pre-commit install
 
 # Install development dependencies
 pip install pytest black flake8 mypy # Python tools
